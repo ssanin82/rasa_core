@@ -10,7 +10,7 @@ from collections import deque
 
 import jsonpickle
 import typing
-from typing import Generator, Dict, Text, Any, Optional
+from typing import Generator, Dict, Text, Any, Optional, Iterator
 from typing import List
 
 from rasa_core import utils
@@ -93,15 +93,17 @@ class DialogueStateTracker(object):
             logger.info("Tried to access non existent slot '{}'".format(key))
             return None
 
-    def get_latest_entity_values(self, entity_name):
-        # type: (Text) -> List[Text]
-        """Get entity values found for the passed entity name in latest msg."""
+    def get_latest_entity_values(self, entity_type):
+        # type: (Text) -> Iterator[Text]
+        """Get entity values found for the passed entity name in latest msg.
 
-        entity_values = [x.get("value")
-                         for x in self.latest_message.entities
-                         if x.get("entity") == entity_name]
+        If you are only interested in the first entity of a given type use
+        `next(tracker.get_latest_entity_values("my_entity_name"), None)`.
+        If no entity is found `None` is the default result."""
 
-        return entity_values
+        return (x.get("value")
+                for x in self.latest_message.entities
+                if x.get("entity") == entity_type)
 
     def is_paused(self):
         # type: () -> bool
@@ -243,7 +245,7 @@ class DialogueStateTracker(object):
 
         self._reset_slots()
         self._paused = False
-        self.latest_action_name = []
+        self.latest_action_name = None
         self.latest_message = UserUttered.empty()
         self.follow_up_action = None
         self._topic_stack = utils.TopicStack(self.topics, [],

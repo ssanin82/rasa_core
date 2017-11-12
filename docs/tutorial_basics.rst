@@ -28,7 +28,7 @@ Let's start by creating a project folder:
 
    mkdir moodbot && cd moodbot
 
-We are need to create two data files (dialogue stories as well as nlu examples)
+We need to create two data files (dialogue stories as well as nlu examples)
 as well as two configuration files (dialogue domain and nlu config). The final
 structure should look like this:
 
@@ -37,7 +37,7 @@ structure should look like this:
    moodbot/
    ├── data/
    │   ├── stories.md            # dialogue training data
-   │   └── nlu.json              # nlu training data
+   │   └── nlu.md                # nlu training data
    ├── domain.yml                # dialogue configuration
    └── nlu_model_config.json     # nlu configuration
 

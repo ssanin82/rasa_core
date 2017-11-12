@@ -119,6 +119,7 @@ class MessageProcessor(object):
         if self._should_predict_another_action(executed_action, events):
             return self._predict_next_and_return_state(tracker)
         else:
+            self._save_tracker(tracker)
             return {"next_action": None,
                     "info": "You do not need to call continue after action "
                             "listen got returned for the previous continue "
@@ -300,8 +301,9 @@ class MessageProcessor(object):
         logger.debug("Action '{}' ended with events '{}'".format(
                 action_name, ['{}'.format(e) for e in events]))
 
-        # log the action and its produced events
-        tracker.update(ActionExecuted(action_name))
+        if action_name is not None:
+            # log the action and its produced events
+            tracker.update(ActionExecuted(action_name))
 
         for e in events:
             tracker.update(e)
