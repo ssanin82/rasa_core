@@ -203,7 +203,7 @@ class MessageProcessor(object):
         return parse_data
 
     def _handle_message_with_tracker(self, message, tracker):
-        # type: (UserMessage, DialogueStateTracker) -> None
+        # type: (UserMessage, DialogueStateTracker) -> bool
 
         parse_data = self._parse_message(message)
 
