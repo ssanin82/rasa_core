@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from typing import Text
 
 from rasa_core.actions import Action
-from rasa_core.actions.action import ActionRestart, ACTION_LISTEN_NAME
+from rasa_core.actions.action import ActionRestart, ACTION_LISTEN_NAME, ActionUnclear, ACTION_UNCLEAR_NAME
 from rasa_core.channels import UserMessage, InputChannel
 from rasa_core.channels.direct import CollectingOutputChannel
 from rasa_core.dispatcher import Dispatcher
@@ -38,7 +38,8 @@ class MessageProcessor(object):
                  tracker_store,  # type: TrackerStore
                  max_number_of_predictions=10,  # type: int
                  message_preprocessor=None,  # type: Optional[LambdaType]
-                 on_circuit_break=None  # type: Optional[LambdaType]
+                 on_circuit_break=None,  # type: Optional[LambdaType]
+                 confidence_threshold=None  # type: Optional[float]
                  ):
         self.interpreter = interpreter
         self.policy_ensemble = policy_ensemble
@@ -47,6 +48,7 @@ class MessageProcessor(object):
         self.max_number_of_predictions = max_number_of_predictions
         self.message_preprocessor = message_preprocessor
         self.on_circuit_break = on_circuit_break
+        self.confidence_threshold = confidence_threshold
 
     def handle_channel(self, input_channel=None):
         # type: (InputChannel) -> None
@@ -75,10 +77,10 @@ class MessageProcessor(object):
         # we have a Tracker instance for each user
         # which maintains conversation state
         tracker = self._get_tracker(message.sender_id)
-        self._handle_message_with_tracker(message, tracker)
-        self._predict_and_execute_next_action(message, tracker)
-        # save tracker state to continue conversation from this state
-        self._save_tracker(tracker)
+        if self._handle_message_with_tracker(message, tracker):
+            self._predict_and_execute_next_action(message, tracker)
+            # save tracker state to continue conversation from this state
+            self._save_tracker(tracker)
 
         if isinstance(message.output_channel, CollectingOutputChannel):
             return [outgoing_message
@@ -96,18 +98,21 @@ class MessageProcessor(object):
         # we have a Tracker instance for each user
         # which maintains conversation state
         tracker = self._get_tracker(message.sender_id)
-        self._handle_message_with_tracker(message, tracker)
+        if self._handle_message_with_tracker(message, tracker):
+            # Log currently set slots
+            self._log_slots(tracker)
 
-        # Log currently set slots
-        self._log_slots(tracker)
-
-        # action loop. predicts actions until we hit action listen
-        if self._should_handle_message(tracker):
-            return self._predict_next_and_return_state(tracker)
+            # action loop. predicts actions until we hit action listen
+            if self._should_handle_message(tracker):
+                return self._predict_next_and_return_state(tracker)
+            else:
+                return {"next_action": None,
+                        "info": "Bot is currently paused and no restart was "
+                                "received yet.",
+                        "tracker": tracker.current_state()}
         else:
             return {"next_action": None,
-                    "info": "Bot is currently paused and no restart was "
-                            "received yet.",
+                    "info": "Failed to understand. Confidence level is below threshold.",
                     "tracker": tracker.current_state()}
 
     def continue_message_handling(self, sender_id, executed_action, events):
@@ -202,6 +207,17 @@ class MessageProcessor(object):
 
         parse_data = self._parse_message(message)
 
+        if self.confidence_threshold and \
+                parse_data["intent"]["confidence"] < self.confidence_threshold:
+            logger.debug("Confidence level {} is below confidence threshold")
+            # this should not change any dialogue state
+            dispatcher = Dispatcher(message.sender_id,
+                                    message.output_channel,
+                                    self.domain)
+            action = ActionUnclear()
+            self._run_action(action, tracker, dispatcher)
+            return False
+
         # don't ever directly mutate the tracker - instead pass it events to log
         tracker.update(UserUttered(message.text, parse_data["intent"],
                                    parse_data["entities"], parse_data))
@@ -211,6 +227,7 @@ class MessageProcessor(object):
 
         logger.debug("Logged UserUtterance - "
                      "tracker now has {} events".format(len(tracker.events)))
+        return True
 
     def _should_handle_message(self, tracker):
         return (not tracker.is_paused() or
@@ -254,9 +271,10 @@ class MessageProcessor(object):
         logger.debug("Current topic: {}".format(tracker.topic.name))
 
     def _should_predict_another_action(self, action_name, events):
+        is_unclear_action = action_name == ACTION_UNCLEAR_NAME
         is_listen_action = action_name == ACTION_LISTEN_NAME
         contains_restart = events and isinstance(events[0], Restarted)
-        return not is_listen_action and not contains_restart
+        return not is_listen_action and not contains_restart and not is_unclear_action
 
     def _schedule_reminders(self, events, dispatcher):
         # type: (List[Event], Dispatcher) -> None

@@ -20,6 +20,8 @@ ACTION_LISTEN_NAME = "action_listen"
 
 ACTION_RESTART_NAME = "action_restart"
 
+ACTION_UNCLEAR_NAME = "action_unclear"
+
 
 class Action(object):
     """Next action to be taken in response to a dialogue state."""
@@ -104,3 +106,19 @@ class ActionRestart(Action):
         if domain.random_template_for("utter_restart") is not None:
             dispatcher.utter_template("utter_restart")
         return [Restarted()]
+
+
+class ActionUnclear(Action):
+    """Utters the unclear template if available.
+
+    It doesn't generate any events to prevent ongoing dialog state from
+    changing."""
+
+    def name(self):
+        return ACTION_UNCLEAR_NAME
+
+    def run(self, dispatcher, tracker, domain):
+        # only utter the template if it is available
+        if domain.random_template_for("utter_unclear") is not None:
+            dispatcher.utter_template("utter_unclear")
+        return []
